@@ -17,7 +17,71 @@ def coco91_to_coco80_class():
     return x
 
 
-def convert_coco_json(json_dir='../Dataset/COCO/annotations/'):
+def voc2coco():
+    classes = ('back_hand_break',
+               'back_handle',
+               'back_light',
+               'back_mudguard',
+               'back_pedal',
+               'back_reflector',
+               'back_wheel',
+               'bell',
+               'chain',
+               'dress_guard',
+               'dynamo',
+               'front_handbreak',
+               'front_handle',
+               'front_light',
+               'front_mudguard',
+               'front_pedal',
+               'front_wheel',
+               'gear_case',
+               'kickstand',
+               'lock',
+               'saddle',
+               'steer')
+    file_names = [file_name for file_name in glob.glob("../Dataset/VIP2021/images/val/*.jpg", recursive=True)]
+    file_names = list(sorted(file_names))
+    output_json_dict = {"images": [],
+                        "type": "instances",
+                        "annotations": [],
+                        "categories": []}
+    box_id = 1
+    print('Start converting !')
+    for file_name in file_names:
+        image = Image.open(file_name)
+        width, height = image.size
+        img_id = os.path.basename(file_name).split('.')[0]
+        img_info = {'file_name': os.path.basename(file_name),
+                    'height': height,
+                    'width': width,
+                    'id': img_id}
+        output_json_dict['images'].append(img_info)
+        with open(file_name.replace('images', 'labels').replace('jpg', 'txt')) as f:
+            for box in f.readlines():
+                category_id, x_min, y_min, x_max, y_max = list(map(int, box.rstrip().split()))
+                box_w = x_max - x_min
+                box_h = y_max - y_min
+                ann = {'area': box_w * box_h,
+                       'iscrowd': 0,
+                       'bbox': [x_min, y_min, box_w, box_h],
+                       'category_id': category_id,
+                       'ignore': 0,
+                       'segmentation': []}
+                ann.update({'image_id': img_id, 'id': box_id})
+                output_json_dict['annotations'].append(ann)
+                box_id += 1
+
+    for label_id, label in enumerate(classes):
+        category_info = {'supercategory': 'none', 'id': label_id, 'name': label}
+        output_json_dict['categories'].append(category_info)
+
+    with open('val.json', 'w') as f:
+        output_json = json.dumps(output_json_dict)
+        f.write(output_json)
+
+
+def coco2voc(json_dir='../Dataset/COCO/annotations/'):
     jsons = glob.glob(json_dir + '*.json')
     coco80 = coco91_to_coco80_class()
     names = ['person', 'bicycle', 'car', 'motorcycle', 'airplane', 'bus', 'train', 'truck', 'boat', 'traffic light',
@@ -64,4 +128,4 @@ if __name__ == '__main__':
     base_dir = '../Dataset/COCO'
     if not os.path.exists(f'{base_dir}/labels'):
         os.makedirs(f'{base_dir}/labels')
-    convert_coco_json()
+    coco2voc()
