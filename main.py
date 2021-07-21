@@ -17,6 +17,77 @@ def coco91_to_coco80_class():
     return x
 
 
+def via2coco():
+    classes = ('Bonnet/Hood',
+               'Front Fog Lamp',
+               'Rear Door',
+               'Rear bumper',
+               'Staff',
+               'Rediator Grille',
+               'Tail Lamp',
+               'Front Fender',
+               'Front Door',
+               'Roof',
+               'Front Wheel',
+               'Rear Wheel',
+               'Front bumper',
+               'Rear Fog Lamp',
+               'Trunk Door',
+               'Head Lamp',
+               'Rear Fender',
+               'Side View Mirror')
+
+    output_json_dict = {"categories": [],
+                        "images": [],
+                        "annotations": []}
+
+    box_id = 1
+    print('Start converting !')
+    with open('../Dataset/PepCar/annotation/via_train.json') as f:
+        json_file = json.load(f)
+    for i, key in enumerate(json_file):
+        filename = json_file[key]['filename']
+        regions = json_file[key]['regions']
+        image = Image.open(os.path.join('../Dataset/PepCar/images/train/', filename))
+        width, height = image.size
+        img_id = str(i + 1).zfill(5)
+        img_info = {'file_name': filename,
+                    'height': height,
+                    'width': width,
+                    'id': img_id}
+        output_json_dict['images'].append(img_info)
+        for region in regions:
+            category_id = classes.index(region['region_attributes']['carpart'])
+
+            points_x = region['shape_attributes']['all_points_x']
+            points_y = region['shape_attributes']['all_points_y']
+
+            seg = []
+            for x, y in zip(points_x, points_y):
+                seg.append(x)
+                seg.append(y)
+            x_min, y_min, x_max, y_max = min(points_x), min(points_y), max(points_x), max(points_y)
+            box_w = x_max - x_min
+            box_h = y_max - y_min
+            ann = {'area': box_w * box_h,
+                   'iscrowd': 0,
+                   'bbox': [x_min, y_min, box_w, box_h],
+                   'category_id': category_id,
+                   'ignore': 0,
+                   'segmentation': seg}
+            ann.update({'image_id': img_id, 'id': box_id})
+            output_json_dict['annotations'].append(ann)
+            box_id += 1
+
+    for label_id, label in enumerate(classes):
+        category_info = {'supercategory': label, 'id': label_id, 'name': label}
+        output_json_dict['categories'].append(category_info)
+
+    with open('train.json', 'w') as f:
+        output_json = json.dumps(output_json_dict)
+        f.write(output_json)
+
+
 def voc2coco():
     classes = ('back_hand_break',
                'back_handle',
