@@ -5,8 +5,12 @@ import os
 
 import numpy
 import tqdm
-from PIL import Image
+from PIL import Image, ExifTags
 from pascal_voc_writer import Writer
+
+for orientation in ExifTags.TAGS.keys():
+    if ExifTags.TAGS[orientation] == 'Orientation':
+        break
 
 
 def coco91_to_coco80_class():
@@ -37,55 +41,78 @@ def via2coco():
                'Rear Fender',
                'Side View Mirror')
 
-    output_json_dict = {"categories": [],
-                        "images": [],
-                        "annotations": []}
+    via_data = json.load(open('../Dataset/PepCar/annotation/via_v.json'))
 
-    box_id = 1
-    print('Start converting !')
-    with open('../Dataset/PepCar/annotation/via_train.json') as f:
-        json_file = json.load(f)
-    for i, key in enumerate(json_file):
-        filename = json_file[key]['filename']
-        regions = json_file[key]['regions']
-        image = Image.open(os.path.join('../Dataset/PepCar/images/train/', filename))
-        width, height = image.size
-        img_id = str(i + 1).zfill(5)
-        img_info = {'file_name': filename,
-                    'height': height,
-                    'width': width,
-                    'id': img_id}
-        output_json_dict['images'].append(img_info)
-        for region in regions:
-            category_id = classes.index(region['region_attributes']['carpart'])
+    img_id = 0
+    box_id = 0
+    images = []
+    categories = []
+    annotations = []
+    for key in via_data:
+        file_name = via_data[key]["filename"]
 
-            points_x = region['shape_attributes']['all_points_x']
-            points_y = region['shape_attributes']['all_points_y']
+        img_id += 1
+        img = Image.open(os.path.join("../Dataset/PepCar/images/val/", file_name))
+        img.verify()
+        size = img.size
+        try:
+            rotation = dict(img.getexif().items())[orientation]
+            if rotation == 6:
+                size = (size[1], size[0])
+            elif rotation == 8:
+                size = (size[1], size[0])
+        except KeyError:
+            pass
+        w, h = size
 
-            seg = []
-            for x, y in zip(points_x, points_y):
-                seg.append(x)
-                seg.append(y)
-            x_min, y_min, x_max, y_max = min(points_x), min(points_y), max(points_x), max(points_y)
-            box_w = x_max - x_min
-            box_h = y_max - y_min
-            ann = {'area': box_w * box_h,
-                   'iscrowd': 0,
-                   'bbox': [x_min, y_min, box_w, box_h],
-                   'category_id': category_id,
-                   'ignore': 0,
-                   'segmentation': seg}
-            ann.update({'image_id': img_id, 'id': box_id})
-            output_json_dict['annotations'].append(ann)
+        images.append({'file_name': file_name, 'id': img_id, 'height': h, 'width': w})
+
+        for region in via_data[key]["regions"]:
             box_id += 1
+            points_x = region["shape_attributes"]["all_points_x"]
+            points_y = region["shape_attributes"]["all_points_y"]
+            x_min, x_max = min(points_x), max(points_x)
+            y_min, y_max = min(points_y), max(points_y)
+            bbox = [x_min, y_min, x_max - x_min, y_max - y_min]
 
-    for label_id, label in enumerate(classes):
-        category_info = {'supercategory': label, 'id': label_id, 'name': label}
-        output_json_dict['categories'].append(category_info)
+            mask = []
+            left_lines = []
+            right_lines = []
+            max_x = max(points_x)
+            index = points_x.index(max_x)
+            for i, point_x in enumerate(points_x):
+                if i != index:
+                    if points_y[i] < points_y[index]:
+                        angle = abs(point_x - points_x[index]) / abs(points_y[i] - points_y[index] + 1e-7)
+                        left_lines.append([angle, point_x, points_y[i]])
+                    else:
+                        angle = abs(point_x - points_x[index]) / abs(points_y[i] - points_y[index] + 1e-7)
+                        right_lines.append([angle, point_x, points_y[i]])
 
-    with open('train.json', 'w') as f:
-        output_json = json.dumps(output_json_dict)
-        f.write(output_json)
+            left_lines.sort()
+            right_lines.sort(reverse=True)
+
+            for left_line in left_lines:
+                mask.append(left_line[1])
+                mask.append(left_line[2])
+            for right_line in right_lines:
+                mask.append(right_line[1])
+                mask.append(right_line[2])
+            mask.append(points_x[index])
+            mask.append(points_y[index])
+            annotations.append({'id': box_id,
+                                'bbox': bbox,
+                                'iscrowd': 0,
+                                'image_id': img_id,
+                                'segmentation': [mask],
+                                'area': bbox[2] * bbox[3],
+                                'category_id': classes.index(region["region_attributes"]["carpart"]) + 1})
+    for i, key in enumerate(classes):
+        categories.append({'supercategory': key, 'id': i + 1, 'name': key})
+
+    json_data = json.dumps({'images': images, 'categories': categories, 'annotations': annotations})
+    with open('coco_v.json', 'w') as f:
+        f.write(json_data)
 
 
 def voc2coco():
